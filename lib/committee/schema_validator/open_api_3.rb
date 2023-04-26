@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'openapi_parameters'
+
 module Committee
   module SchemaValidator
     class OpenAPI3
@@ -26,7 +28,7 @@ module Committee
           full_body << chunk
         end
 
-        parse_to_json = !validator_option.parse_response_by_content_type || 
+        parse_to_json = !validator_option.parse_response_by_content_type ||
                         headers.fetch('Content-Type', nil)&.start_with?('application/json')
         data = if parse_to_json
           full_body.empty? ? {} : JSON.parse(full_body)
@@ -85,20 +87,22 @@ module Committee
           optimistic_json:    validator_option.optimistic_json,
         )
 
+
         request.env[validator_option.headers_key] = unpacker.unpack_headers(request)
 
         request_param, is_form_params = unpacker.unpack_request_params(request)
         request.env[validator_option.request_body_hash_key] = request_param
         request.env[validator_option.path_hash_key] = coerce_path_params
 
-        query_param = unpacker.unpack_query_params(request)
+        query_param = OpenapiParameters::Query.new(@operation_object.query_parameters).unpack(request.query_string)
+
         query_param.merge!(request_param) if request.get? && validator_option.allow_get_body
         request.env[validator_option.query_hash_key] = query_param
       end
 
       def copy_coerced_data_to_params(request)
         order = if validator_option.parameter_overwite_by_rails_rule
-          # (high priority) path_hash_key -> query_param -> request_body_hash          
+          # (high priority) path_hash_key -> query_param -> request_body_hash
           [validator_option.request_body_hash_key, validator_option.query_hash_key, validator_option.path_hash_key]
         else
           # (high priority) path_hash_key -> request_body_hash -> query_param

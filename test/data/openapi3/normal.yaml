@@ -683,7 +683,7 @@ paths:
         in: query
         required: false
         schema:
-          type: integer    
+          type: integer
       requestBody:
         content:
           application/json:

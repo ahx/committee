@@ -13,6 +13,14 @@ module Committee
           request_operation.path_params
         end
 
+        def all_parameters
+          request_operation.operation_object.raw_schema['parameters']
+        end
+
+        def query_parameters
+          all_parameters&.filter { |p| p['in'] == 'query' } || []
+        end
+
         def original_path
           request_operation.original_path
         end

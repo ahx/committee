@@ -410,6 +410,143 @@ describe Committee::Middleware::RequestValidation do
     get "/coerce_path_params/1"
   end
 
+  it 'validates query parameters that have brackets' do
+    schema = Committee::Drivers.load_from_data({
+      'openapi' => '3.0.0',
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'parameters' => [
+              {
+                'name' => 'page[number]',
+                'in' => 'query',
+                'schema' => { 'type' => 'integer', 'maximum' => 100 }
+              }
+            ]
+          }
+        }
+      }
+    })
+    @app = new_rack_app(schema: schema, strict: true)
+    get "/pets?page[number]=500"
+    assert_equal 400, last_response.status
+    get "/pets?page[number]=100"
+    assert_equal 200, last_response.status
+    assert_equal 100, last_query_params['page[number]']
+  end
+
+  it 'validates query parameters with style: deepObject' do
+    schema = Committee::Drivers.load_from_data({
+      'openapi' => '3.0.0',
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'parameters' => [
+              {
+                'name' => 'page',
+                'style' => 'deepObject',
+                'in' => 'query',
+                'schema' => {
+                  'type' => 'object',
+                  'required' => ['number'],
+                  'properties' => {
+                    'number' => { 'type' => 'integer', 'maximum' => 100 }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    })
+    @app = new_rack_app(schema: schema, strict: true)
+    get "/pets?page[number]=500"
+    assert_equal 400, last_response.status
+    get "/pets?page[number]=100"
+    assert_equal 200, last_response.status
+    assert_equal 100, last_query_params['page']['number']
+  end
+
+  it 'validates array query parameters with explode true' do
+    schema = Committee::Drivers.load_from_data({
+      'openapi' => '3.0.0',
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'parameters' => [
+              {
+                'name' => 'ids',
+                'in' => 'query',
+                'explode' => true,
+                'schema' => { 'type' => 'array', 'items' => { 'type' => 'integer' } }
+              }
+            ]
+          }
+        }
+      }
+    })
+    @app = new_rack_app(schema: schema, strict: true)
+    get "/pets?ids=1&ids=2"
+    assert_equal 200, last_response.status
+    assert_equal [1,2], last_query_params['ids']
+
+    get "/pets?ids=foo"
+    assert_equal 400, last_response.status
+  end
+
+  it 'interprets array query parameters with explode true by default' do
+    schema = Committee::Drivers.load_from_data({
+      'openapi' => '3.0.0',
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'parameters' => [
+              {
+                'name' => 'id',
+                'in' => 'query',
+                'schema' => { 'type' => 'array', 'items' => { 'type' => 'integer' } }
+              }
+            ]
+          }
+        }
+      }
+    })
+    @app = new_rack_app(schema: schema, strict: true)
+    get "/pets?ids=1&ids=2"
+    assert_equal 200, last_response.status
+    assert_equal [1,2], last_query_params['ids']
+
+    get "/pets?ids=foo"
+    assert_equal 400, last_response.status
+  end
+
+  it 'validates array query parameters with explode false' do
+    schema = Committee::Drivers.load_from_data({
+      'openapi' => '3.0.0',
+      'paths' => {
+        '/pets' => {
+          'get' => {
+            'parameters' => [
+              {
+                'name' => 'id',
+                'in' => 'query',
+                'explode' => true,
+                'schema' => { 'type' => 'array', 'items' => { 'type' => 'integer' } }
+              }
+            ]
+          }
+        }
+      }
+    })
+    @app = new_rack_app(schema: schema, strict: true)
+    get "/pets?ids=1,2"
+    assert_equal 200, last_response.status
+    assert_equal [1,2], last_query_params['ids']
+
+    get "/pets?ids=foo"
+    assert_equal 400, last_response.status
+  end
+
   describe "overwrite same parameter (old rule)" do
     # (high priority) path_hash_key -> request_body_hash -> query_param
     it "set query parameter to committee.params and query hash" do
@@ -541,7 +678,7 @@ describe Committee::Middleware::RequestValidation do
     }
 
     assert_equal 'Committee OpenAPI3 not support trace method', e.message
-  end  
+  end
 
   describe 'check header' do
     [
@@ -607,6 +744,10 @@ describe Committee::Middleware::RequestValidation do
   end
 
   private
+
+  def last_query_params
+    last_request.env['committee.query_hash']
+  end
 
   def new_rack_app(options = {})
     new_rack_app_with_lambda(lambda { |_|
